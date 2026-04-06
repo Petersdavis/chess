@@ -1,0 +1,136 @@
+services:
+  firebase-emulator:
+    build:
+      context: ./firebase
+    ports:
+      - "4000:4000" # Emulator Suite UI
+      - "8080:8080" # Firestore Emulator
+      - "9099:9099" # Auth Emulator
+      - "5001:5001" # Functions Emulator
+    volumes:
+      - .:/app
+      - /app/functions/venv
+      - firebase_data:/data
+
+  stockfish:
+    build:
+      context: ./analysis
+    ports:
+      - "5000:5000" # Analysis API
+    volumes:
+      - ./analysis:/app
+    command: gunicorn --bind 0.0.0.0:5000 --workers 5 --timeout 300 analyzer:app
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    depends_on:
+      - kafka
+    volumes:
+      - .:/app
+    command: python app.py
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --save 86400 1 --appendonly yes --auto-aof-rewrite-percentage 100 --auto-aof-rewrite-min-size 64mb
+
+  kafka:
+    image: apache/kafka:3.7.1
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+  kafka-init:
+    image: apache/kafka:3.7.1
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      echo "Waiting for Kafka..." && \
+      sleep 5 && \
+      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic users.new        --partitions 1 --replication-factor 1 && \
+      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic game.archives    --partitions 1 --replication-factor 1 && \
+      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic games.analysis   --partitions 1 --replication-factor 1 && \
+      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --bootstrap-server kafka:9092 --topic firestore.writes --partitions 1 --replication-factor 1 && \
+      echo "Topics created."
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8090:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      - kafka
+  flink-jobmanager:
+    build:
+      context: ./flink
+    container_name: manager
+    ports:
+      - "8081:8081" # Flink Web UI
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+      FIRESTORE_EMULATOR_HOST: firebase-emulator:8080
+      GOOGLE_CLOUD_PROJECT: demo-local
+    command: jobmanager
+    depends_on:
+      - kafka
+      - firebase-emulator
+    volumes:
+      - flink_data:/opt/flink/data
+      - ./flink/jobs:/opt/flink/jobs
+      - ./logs:/var/log/flink
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/overview"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  flink-taskmanager:
+    build:
+      context: ./flink
+    depends_on:
+      - flink-jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 5
+      FIRESTORE_EMULATOR_HOST: firebase-emulator:8080
+      GOOGLE_CLOUD_PROJECT: demo-local
+    command: taskmanager
+    volumes:
+      - flink_data:/opt/flink/data
+      - ./flink/jobs:/opt/flink/jobs
+      - ./logs:/var/log/flink
+    deploy:
+      replicas: 4
+
+volumes:
+  redis_data:
+  flink_data:
+  kafka_data:
+  firebase_data:
+

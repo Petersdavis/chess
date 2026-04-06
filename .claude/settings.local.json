@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose logs:*)",
+      "Bash(docker exec:*)",
+      "Bash(MSYS_NO_PATHCONV=1 docker exec chess-flink-taskmanager-1:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(curl -s http://localhost:8081/jobs/9f800127f51282f20589223051ecbaf0/exceptions)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"http://localhost:8081/jobs/9f800127f51282f20589223051ecbaf0/exceptions\")",
+      "Bash(curl -s http://localhost:8081/jobs)",
+      "Bash(docker port:*)",
+      "Bash(curl:*)",
+      "Bash(docker compose up:*)",
+      "Read(//c/Users/Renee/AppData/Local/Temp/claude/C--Users-Renee-dev-chess/29b73fd5-e4a0-4be2-a732-45c857a02a71/tasks/**)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+*.py[codz]
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.pdm-python
+
+# Node
+node_modules/
+dist/
+.storybook/
+
+*storybook.log
+storybook-static
+
+logs/
+openings/database/
+
+# Large files
+analysis/stockfish-ubuntu-x86-64-avx512.tar
+openings/bookmoves.json
