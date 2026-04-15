@@ -69,6 +69,7 @@ class FirestoreWriter(MapFunction):
             return value
 
         doc = {k: v for k, v in data.items() if v is not None}
+        doc["_t"] = firestore.SERVER_TIMESTAMP
         self.db.collection(collection).document(doc_id).set(doc, merge=True)
         logger.info(f"Written {collection}/{doc_id}")
         return value

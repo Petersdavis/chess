@@ -4,6 +4,10 @@ import glob
 import re
 import sys
 import chess.pgn
+import itertools
+
+# Configuration
+MAX_DEPTH = 10  # Limit to 10 full moves (20 plies)
 
 print("--- DEBUG: Script started ---", flush=True)
 
@@ -39,10 +43,13 @@ def process_pgn_into_tree(pgn_path, master_tree):
                     break
                 
                 games_processed += 1
+                if(games_processed % 5 != 1):
+                    continue
                 board = game.board()
                 current_level = master_tree
                 
-                for move in game.mainline_moves():
+                # Limit the depth of unique moves to MAX_DEPTH
+                for move in itertools.islice(game.mainline_moves(), MAX_DEPTH):
                     san_move = board.san(move)
                     if san_move not in current_level:
                         current_level[san_move] = {}
@@ -68,7 +75,8 @@ def build_book(database_path, output_file):
         name = data.get("name")
         
         current_level = book_tree
-        for move in moves:
+        # Limit the depth of canonical openings to MAX_DEPTH
+        for move in moves[:MAX_DEPTH]:
             if move not in current_level:
                 current_level[move] = {}
             current_level = current_level[move]
@@ -92,7 +100,7 @@ def build_book(database_path, output_file):
             total_games += count
             
             # Atomic checkpoint saves every 5 files
-            if (i + 1) % 5 == 0 or (i + 1) == len(pgn_files):
+            if (i + 1) == len(pgn_files):
                 print(f"  Checkpoint: Saving progress ({total_games} total engagements synthesized)...", flush=True)
                 temp_file = output_file + ".tmp"
                 with open(temp_file, 'w') as f:
@@ -101,7 +109,6 @@ def build_book(database_path, output_file):
                 if os.path.exists(output_file):
                     os.remove(output_file)
                 os.rename(temp_file, output_file)
-
         print(f"Synthesis complete. Processed {total_games} total engagements.", flush=True)
     
     print(f"Master Book finalized at: {output_file}", flush=True)

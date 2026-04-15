@@ -66,10 +66,10 @@ CHESS_UA         = "chess-trainer/0.0 (username: pdavis; contact: petersdavis@gm
 BOOK_PATH        = os.getenv("CHESS_BOOK_PATH", "openings/bookmoves.json")
 
 
-def get_book_metrics(pgn_str: str, book_dict: dict) -> tuple[int, str | None]:
+def get_book_metrics(pgn_str: str, book_dict: dict) -> tuple[int, str | None, str | None]:
     """
     Traverses the opening book using the game's move sequence.
-    Returns (depth, last_move_color).
+    Returns (depth, last_move_color, opening_name).
     """
     if not pgn_str or not book_dict:
         return 0, None
@@ -83,22 +83,25 @@ def get_book_metrics(pgn_str: str, book_dict: dict) -> tuple[int, str | None]:
         current_level = book_dict
         depth = 0
         last_color = None
+        opening_name = None
         board = game.board()
 
         for move in game.mainline_moves():
             san_move = board.san(move)
             if san_move in current_level:
                 current_level = current_level[san_move]
+                if "_n" in current_level:
+                    opening_name = current_level["_n"]
                 depth += 1
                 last_color = "white" if depth % 2 != 0 else "black"
                 board.push(move)
             else:
                 break
 
-        return depth, last_color
+        return depth, last_color, opening_name
     except Exception as e:
         logger.error(f"Error analyzing book depth: {e}")
-        return 0, None
+        return 0, None, None
 
 
 def _extract_username(player) -> str:
@@ -203,9 +206,22 @@ class FetchAndPublishGames(MapFunction):
 
             # Book Analysis
             raw_pgn = game.get("pgn", "")
-            depth, last_color = get_book_metrics(raw_pgn, self.book)
+            depth, last_color, opening_name = get_book_metrics(raw_pgn, self.book)
             record["book_move_depth"] = depth
             record["last_book_move"]  = last_color
+            record["opening_name"]    = opening_name
+
+            # Redis Stats (Counters)
+            if opening_name and record["outcome"] in ["white", "black"]:
+                is_win = (record["outcome"] == "white" and username == record["white"]) or \
+                         (record["outcome"] == "black" and username == record["black"])
+                stat_suffix = "wins" if is_win else "loses"
+                
+                # Sanitize key for Redis
+                safe_opening = opening_name.replace(" ", "_").replace(",", "").replace(":", "")
+                redis_key = f"{username}.{safe_opening}.{stat_suffix}"
+                self.redis.incr(redis_key)
+                logger.debug(f"Incremented Redis key: {redis_key}")
 
             record["id"] = nanoid()
             self.producer.send(SINK_TOPIC, json.dumps(record))
